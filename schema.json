@@ -1,0 +1,11 @@
+{
+  "name": "CryptoExchange",
+  "tuples_limit": 1000,
+  "structure": {
+    "user": ["user_id", "username", "key"],
+    "user_lot": ["user_id", "lot_id", "quantity"],
+    "order": ["order_id", "user_id", "pair_id", "quantity", "price", "type", "closed"],
+    "lot": ["lot_id", "name"],
+    "pair": ["pair_id", "first_lot_id", "second_lot_id"]
+  }
+}
