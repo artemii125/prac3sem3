@@ -188,12 +188,12 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
     
     cout << "[MATCH] Checking pair " << pairId << ", type " << type << " (looking for " << oppositeType << ")\n";
 
-    // 1. ИЗМЕНЕНИЕ: Убрали "AND closed = ''" из SQL. Запрашиваем ВСЕ ордера этого типа.
+    //Получаем встречные ордера
     string query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + oppositeType + "'";
     string result = sendToDatabase(query);
     json oppositeOrders = json::parse(result);
     
-    // 2. ИЗМЕНЕНИЕ: Здесь тоже убрали "AND closed = ''"
+    // Получаем текущие ордера
     query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + type + "'";
     result = sendToDatabase(query);
     json currentOrders = json::parse(result);
@@ -206,7 +206,7 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
     // Берем последний ордер
     json currentOrder = currentOrders[currentOrders.size() - 1];
     
-    // 3. ИЗМЕНЕНИЕ: Проверяем, активен ли текущий ордер (по количеству)
+    //проверка активен ли текущий ордер
     double currentQty = stod(currentOrder["quantity"].get<string>());
     if (currentQty <= 0.000001) {
          cout << "[MATCH] Current order is already closed (qty=0).\n";
@@ -230,9 +230,8 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
         
         double oppositeQty = stod(oppositeOrder["quantity"].get<string>());
         
-        // 4. ИЗМЕНЕНИЕ: Фильтруем закрытые ордера здесь, в C++
         if (oppositeQty <= 0.000001) {
-            continue; // Пропускаем уже исполненные ордера
+            continue;
         }
 
         double oppositePrice = stod(oppositeOrder["price"].get<string>());
@@ -250,10 +249,15 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
         cout << "[MATCH] MATCHED! Trade price: " << oppositePrice << "\n";
 
         double matchQty = min(currentQty, oppositeQty);
-        double tradePrice = oppositePrice;
+        double tradePrice = min(currentPrice, oppositePrice);
         string timestamp = to_string(time(nullptr));
         
+        string buyerUserId;
+        double buyerOriginalPrice = 0.0;
+
         if (type == "buy") {
+            buyerUserId = currentUserId;
+            buyerOriginalPrice = currentPrice;
             // Текущий (Покупатель): +Товар
             query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
             result = sendToDatabase(query);
@@ -271,20 +275,9 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
             query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
             sendToDatabase(query);
             
-            // Возврат разницы покупателю, если цена матчинга лучше
-            cout << "[REFUND CHECK] tradePrice=" << tradePrice << " currentPrice=" << currentPrice << "\n";
-            if (tradePrice < currentPrice) {
-                double priceDiff = (currentPrice - tradePrice) * matchQty;
-                cout << "[REFUND] Returning " << priceDiff << " to buyer (currentUser)\n";
-                query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
-                result = sendToDatabase(query);
-                bal = json::parse(result)[0];
-                newQty = stod(bal["quantity"].get<string>()) + priceDiff;
-                query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
-                sendToDatabase(query);
-            }
-            
         } else { // type == "sell"
+            buyerUserId = oppositeUserId;
+            buyerOriginalPrice = oppositePrice;
             // Текущий (Продавец): +Деньги
             double cost = matchQty * tradePrice;
             query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
@@ -301,20 +294,18 @@ void Exchange::matchOrders(const string& pairId, const string& type) {
             double newQty2 = stod(bal2["quantity"].get<string>()) + matchQty;
             query = "UPDATE user_lot SET quantity = '" + to_string(newQty2) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
             sendToDatabase(query);
+        }
+
+        if (buyerOriginalPrice > tradePrice) {
+            double refund = (buyerOriginalPrice - tradePrice) * matchQty;
+            cout << "[MATCH] Refunding " << refund << " to user " << buyerUserId << "\n";
             
-            // Возврат разницы покупателю (opposite), если цена матчинга лучше
-            double oppositeOrderPrice = stod(oppositeOrder["price"].get<string>());
-            cout << "[REFUND CHECK SELL] tradePrice=" << tradePrice << " oppositeOrderPrice=" << oppositeOrderPrice << "\n";
-            if (tradePrice < oppositeOrderPrice) {
-                double priceDiff = (oppositeOrderPrice - tradePrice) * matchQty;
-                cout << "[REFUND SELL] Returning " << priceDiff << " to buyer (oppositeUser)\n";
-                query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
-                result = sendToDatabase(query);
-                bal2 = json::parse(result)[0];
-                newQty2 = stod(bal2["quantity"].get<string>()) + priceDiff;
-                query = "UPDATE user_lot SET quantity = '" + to_string(newQty2) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
-                sendToDatabase(query);
-            }
+            query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + buyerUserId + "' AND lot_id = '" + secondLotId + "'";
+            result = sendToDatabase(query);
+            json balRefund = json::parse(result)[0];
+            double newQty = stod(balRefund["quantity"].get<string>()) + refund;
+            query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + buyerUserId + "' AND lot_id = '" + secondLotId + "'";
+            sendToDatabase(query);
         }
         
         currentQty -= matchQty;
