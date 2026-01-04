@@ -30,6 +30,7 @@ private:
     void processInsert(const string& query);
     void processDelete(const string& query);
     void processSelect(const string& query);
+    void processUpdate(const string& query);
 
 public:
     SQLProcessor(Schema* sc);

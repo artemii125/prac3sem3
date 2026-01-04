@@ -121,18 +121,33 @@ void Server::handleClient(int clientSocket, string clientInfo) {
             break;
         }
 
+        //логи
+        cout << "[DEBUG] Received from " << clientInfo << ": " << query << endl;
+
         stringstream result; //буфер для захвата
         streambuf* oldCout = cout.rdbuf(result.rdbuf()); // cout в result
-        
-        {
+
+        try {
             lock_guard<mutex> lock(dbMutex); //захватываем мьютекс
             db->query(query); //выполняем запрос к БД
-        } //мьютекс автоматически освобождается
-        cout.rdbuf(oldCout); //возврат
+        } catch (const std::exception& e) { 
+            cout.rdbuf(oldCout); //возврат
+            cerr << "[ERROR] Exception in DB query: " << e.what() << endl;
+            result << "Error: " << e.what();
+            cout.rdbuf(result.rdbuf()); 
+        } catch (...) {
+            cout.rdbuf(oldCout);
+            cerr << "[ERROR] Unknown exception in DB query" << endl;
+            result << "Error: Unknown exception";
+            cout.rdbuf(result.rdbuf());
+        }
         
-        //формирование самого ответ
-        string response = result.str();
-        if (response.empty()) response = "OK\n";
+        cout.rdbuf(oldCout);
+        string response = result.str(); //формирование ответа
+        if (response.empty()) response = "OK\n"; 
+        
+        //логи
+        cout << "[DEBUG] Sending response: " << response << endl;
         
         send(clientSocket, response.c_str(), response.length(), 0);
     }

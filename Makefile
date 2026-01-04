@@ -15,7 +15,7 @@ DBrun: $(DB_OBJECTS) $(ADT_OBJECTS) src/main.o
 	$(CXX) $(CXXFLAGS) -o DBrun $(DB_OBJECTS) $(ADT_OBJECTS) src/main.o
 
 ExchangeServer: $(DB_OBJECTS) $(ADT_OBJECTS) $(EXCHANGE_OBJECTS) src/exchange_main.o
-	$(CXX) $(CXXFLAGS) -o ExchangeServer $(EXCHANGE_OBJECTS) src/exchange_main.o
+	$(CXX) $(CXXFLAGS) -o ExchangeServer $(DB_OBJECTS) $(ADT_OBJECTS) $(EXCHANGE_OBJECTS) src/exchange_main.o
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@

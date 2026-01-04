@@ -8,8 +8,10 @@
 #include <sstream>
 #include <ctime>
 
-Exchange::Exchange(const std::string& configPath) {
-    std::ifstream file(configPath);
+using namespace std;
+
+Exchange::Exchange(const string& configPath) {
+    ifstream file(configPath);
     json config = json::parse(file);
     
     dbHost = config["database_ip"];
@@ -30,11 +32,11 @@ Exchange::~Exchange() {
     close(dbSocket);
 }
 
-std::string Exchange::sendToDatabase(const std::string& query) {
+string Exchange::sendToDatabase(const string& query) {
     send(dbSocket, query.c_str(), query.length(), 0);
     char buffer[65536] = {0};
     int bytesRead = recv(dbSocket, buffer, 65536, 0);
-    std::string result(buffer, bytesRead);
+    string result(buffer, bytesRead);
     
     // Преобразование CSV ответа в JSON
     if (query.find("SELECT") == 0) {
@@ -42,17 +44,16 @@ std::string Exchange::sendToDatabase(const std::string& query) {
     } else if (query.find("INSERT") == 0) {
         // Для INSERT возвращаем ID из запроса
         size_t valuesPos = query.find("VALUES");
-        if (valuesPos != std::string::npos) {
+        if (valuesPos != string::npos) {
             size_t openParen = query.find('(', valuesPos);
-            size_t firstComma = query.find(',', openParen);
             size_t firstQuote = query.find('\'', openParen);
             size_t secondQuote = query.find('\'', firstQuote + 1);
-            std::string id = query.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+            string id = query.substr(firstQuote + 1, secondQuote - firstQuote - 1);
             
             // Определяем имя ID поля из таблицы
             size_t intoPos = query.find("INTO");
             size_t spaceAfterInto = query.find(' ', intoPos + 5);
-            std::string tableName = query.substr(intoPos + 5, spaceAfterInto - (intoPos + 5));
+            string tableName = query.substr(intoPos + 5, spaceAfterInto - (intoPos + 5));
             
             return "{\"" + tableName + "_id\":\"" + id + "\"}";
         }
@@ -60,19 +61,19 @@ std::string Exchange::sendToDatabase(const std::string& query) {
     return result;
 }
 
-std::string Exchange::csvToJson(const std::string& csv, const std::string& query) {
+string Exchange::csvToJson(const string& csv, const string& query) {
     // Определяем таблицу из запроса
     size_t fromPos = query.find("FROM");
     size_t wherePos = query.find("WHERE");
-    if (fromPos == std::string::npos) return "[]";
+    if (fromPos == string::npos) return "[]";
     
-    std::string tableName = query.substr(fromPos + 5, wherePos - (fromPos + 5));
+    string tableName = query.substr(fromPos + 5, wherePos - (fromPos + 5));
     // Убираем пробелы
     tableName.erase(0, tableName.find_first_not_of(" \t\n\r"));
     tableName.erase(tableName.find_last_not_of(" \t\n\r") + 1);
     
     // Определяем колонки для таблицы
-    std::vector<std::string> columns;
+    vector<string> columns;
     if (tableName == "user") {
         columns = {"user_id", "username", "key"};
     } else if (tableName == "user_lot") {
@@ -86,19 +87,19 @@ std::string Exchange::csvToJson(const std::string& csv, const std::string& query
     }
     
     json result = json::array();
-    std::istringstream stream(csv);
-    std::string line;
+    istringstream stream(csv);
+    string line;
     
-    while (std::getline(stream, line)) {
-        if (line.empty() || line.find("Error") != std::string::npos || 
-            line.find("Inserted") != std::string::npos) continue;
+    while (getline(stream, line)) {
+        if (line.empty() || line.find("Error") != string::npos || 
+            line.find("Inserted") != string::npos || line == "OK") continue;
         
         json row;
-        std::istringstream lineStream(line);
-        std::string value;
+        istringstream lineStream(line);
+        string value;
         size_t colIndex = 0;
         
-        while (std::getline(lineStream, value, ',') && colIndex < columns.size()) {
+        while (getline(lineStream, value, ',') && colIndex < columns.size()) {
             row[columns[colIndex]] = value;
             colIndex++;
         }
@@ -109,12 +110,12 @@ std::string Exchange::csvToJson(const std::string& csv, const std::string& query
     return result.dump();
 }
 
-std::string Exchange::generateKey() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 15);
+string Exchange::generateKey() {
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> dis(0, 15);
     const char* hex = "0123456789abcdef";
-    std::string key;
+    string key;
     for (int i = 0; i < 32; i++) key += hex[dis(gen)];
     return key;
 }
@@ -122,31 +123,31 @@ std::string Exchange::generateKey() {
 void Exchange::initializeLots(const json& config) {
     auto lots = config["lots"];
     for (size_t i = 0; i < lots.size(); i++) {
-        std::string query = "SELECT lot_id, name FROM lot WHERE name = '" + lots[i].get<std::string>() + "'";
-        std::string result = sendToDatabase(query);
-        if (result.find("[]") != std::string::npos) {
-            query = "INSERT INTO lot VALUES ('" + std::to_string(i+1) + "', '" + lots[i].get<std::string>() + "')";
+        string query = "SELECT lot_id, name FROM lot WHERE name = '" + lots[i].get<string>() + "'";
+        string result = sendToDatabase(query);
+        if (result.find("[]") != string::npos) {
+            query = "INSERT INTO lot VALUES ('" + to_string(i+1) + "', '" + lots[i].get<string>() + "')";
             sendToDatabase(query);
         }
     }
 }
 
 void Exchange::initializePairs() {
-    std::string lotsQuery = "SELECT lot_id, name FROM lot WHERE lot_id = lot_id";
-    std::string lotsResult = sendToDatabase(lotsQuery);
+    string lotsQuery = "SELECT lot_id, name FROM lot WHERE lot_id = '1' OR lot_id = '2' OR lot_id = '3' OR lot_id = '4' OR lot_id = '5' OR lot_id = '6' OR lot_id = '7' OR lot_id = '8' OR lot_id = '9' OR lot_id = '10'";
+    string lotsResult = sendToDatabase(lotsQuery);
     json lots = json::parse(lotsResult);
     
     int pairId = 1;
     for (size_t i = 0; i < lots.size(); i++) {
         for (size_t j = 0; j < lots.size(); j++) {
             if (i != j) {
-                std::string query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE first_lot_id = '" + lots[i]["lot_id"].get<std::string>() + 
-                                  "' AND second_lot_id = '" + lots[j]["lot_id"].get<std::string>() + "'";
-                std::string result = sendToDatabase(query);
-                if (result.find("[]") != std::string::npos) {
+                string query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE first_lot_id = '" + lots[i]["lot_id"].get<string>() + 
+                                  "' AND second_lot_id = '" + lots[j]["lot_id"].get<string>() + "'";
+                string result = sendToDatabase(query);
+                if (result.find("[]") != string::npos) {
                     query = "INSERT INTO pair VALUES ('" + 
-                           std::to_string(pairId++) + "', '" + lots[i]["lot_id"].get<std::string>() + 
-                           "', '" + lots[j]["lot_id"].get<std::string>() + "')";
+                           to_string(pairId++) + "', '" + lots[i]["lot_id"].get<string>() + 
+                           "', '" + lots[j]["lot_id"].get<string>() + "')";
                     sendToDatabase(query);
                 }
             }
@@ -155,109 +156,131 @@ void Exchange::initializePairs() {
 }
 
 json Exchange::createUser(const json& request) {
-    std::string username = request["username"];
-    std::string key = generateKey();
+    string username = request["username"];
+    string key = generateKey();
     
-    std::string query = "INSERT INTO user (username, key) VALUES ('" + username + "', '" + key + "')";
-    std::string result = sendToDatabase(query);
-    json userResult = json::parse(result);
-    std::string userId = userResult["user_id"];
+    // Получаем следующий user_id
+    string query = "SELECT user_id, username, key FROM user WHERE user_id = '1' OR user_id = '2' OR user_id = '3' OR user_id = '4' OR user_id = '5' OR user_id = '6' OR user_id = '7' OR user_id = '8' OR user_id = '9' OR user_id = '10'";
+    string result = sendToDatabase(query);
+    json users = json::parse(result);
+    int nextUserId = users.size() + 1;
+    string userId = to_string(nextUserId);
     
-    std::string lotsQuery = "SELECT lot_id, name FROM lot WHERE lot_id = lot_id";
-    std::string lotsResult = sendToDatabase(lotsQuery);
+    query = "INSERT INTO user VALUES ('" + userId + "', '" + username + "', '" + key + "')";
+    sendToDatabase(query);
+    
+    string lotsQuery = "SELECT lot_id, name FROM lot WHERE lot_id = '1' OR lot_id = '2' OR lot_id = '3' OR lot_id = '4' OR lot_id = '5' OR lot_id = '6' OR lot_id = '7' OR lot_id = '8' OR lot_id = '9' OR lot_id = '10'";
+    string lotsResult = sendToDatabase(lotsQuery);
     json lots = json::parse(lotsResult);
     
     for (auto& lot : lots) {
-        query = "INSERT INTO user_lot (user_id, lot_id, quantity) VALUES ('" + 
-               userId + "', '" + lot["lot_id"].get<std::string>() + "', '1000')";
+        query = "INSERT INTO user_lot VALUES ('" + 
+               userId + "', '" + lot["lot_id"].get<string>() + "', '1000')";
         sendToDatabase(query);
     }
     
     return json{{"key", key}};
 }
 
-void Exchange::matchOrders(const std::string& pairId, const std::string& type) {
-    std::string oppositeType = (type == "buy") ? "sell" : "buy";
-    std::string query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + oppositeType + "' AND closed = ''";
-    std::string result = sendToDatabase(query);
+void Exchange::matchOrders(const string& pairId, const string& type) {
+    string oppositeType = (type == "buy") ? "sell" : "buy";
+    string query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + oppositeType + "' AND closed = ' ''''";
+    string result = sendToDatabase(query);
     json oppositeOrders = json::parse(result);
     
-    query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + type + "' AND closed = ''";
+    query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE pair_id = '" + pairId + "' AND type = '" + type + "' AND closed = ' ''''";
     result = sendToDatabase(query);
     json currentOrders = json::parse(result);
     if (currentOrders.empty()) return;
     
     json currentOrder = currentOrders[currentOrders.size() - 1];
-    double currentQty = std::stod(currentOrder["quantity"].get<std::string>());
-    double currentPrice = std::stod(currentOrder["price"].get<std::string>());
-    std::string currentOrderId = currentOrder["order_id"];
-    std::string currentUserId = currentOrder["user_id"];
+    double currentQty = stod(currentOrder["quantity"].get<string>());
+    double currentPrice = stod(currentOrder["price"].get<string>());
+    string currentOrderId = currentOrder["order_id"];
+    string currentUserId = currentOrder["user_id"];
     
     query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = '" + pairId + "'";
     result = sendToDatabase(query);
     json pair = json::parse(result)[0];
-    std::string firstLotId = pair["first_lot_id"];
-    std::string secondLotId = pair["second_lot_id"];
+    string firstLotId = pair["first_lot_id"];
+    string secondLotId = pair["second_lot_id"];
     
     for (auto& oppositeOrder : oppositeOrders) {
         if (currentQty <= 0) break;
         
-        double oppositeQty = std::stod(oppositeOrder["quantity"].get<std::string>());
-        double oppositePrice = std::stod(oppositeOrder["price"].get<std::string>());
-        std::string oppositeOrderId = oppositeOrder["order_id"];
-        std::string oppositeUserId = oppositeOrder["user_id"];
+        double oppositeQty = stod(oppositeOrder["quantity"].get<string>());
+        double oppositePrice = stod(oppositeOrder["price"].get<string>());
+        string oppositeOrderId = oppositeOrder["order_id"];
+        string oppositeUserId = oppositeOrder["user_id"];
         
         bool priceMatch = (type == "buy") ? (currentPrice >= oppositePrice) : (currentPrice <= oppositePrice);
         if (!priceMatch) continue;
         
-        double matchQty = std::min(currentQty, oppositeQty);
+        double matchQty = min(currentQty, oppositeQty);
         double tradePrice = oppositePrice;
-        std::string timestamp = std::to_string(std::time(nullptr));
+        string timestamp = to_string(time(nullptr));
+        
+        // Для пары first/second (например RUB/USD):
+        // buy: покупатель получает first (RUB), продавец получает second (USD)
+        // sell: продавец получает second (USD), покупатель получает first (RUB)
         
         if (type == "buy") {
+            // Покупатель (current) получает first
             query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
             result = sendToDatabase(query);
             json bal = json::parse(result)[0];
-            double newQty = std::stod(bal["quantity"].get<std::string>()) + matchQty;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
+            double newQty = stod(bal["quantity"].get<string>()) + matchQty;
+            query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
             sendToDatabase(query);
             
-            query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
-            result = sendToDatabase(query);
-            bal = json::parse(result)[0];
-            newQty = std::stod(bal["quantity"].get<std::string>()) - matchQty;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
-            sendToDatabase(query);
-            
-            double cost = matchQty * tradePrice;
+            // Продавец (opposite) получает second
+            double actualCost = matchQty * tradePrice;
             query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
             result = sendToDatabase(query);
             bal = json::parse(result)[0];
-            newQty = std::stod(bal["quantity"].get<std::string>()) + cost;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
+            newQty = stod(bal["quantity"].get<string>()) + actualCost;
+            query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
             sendToDatabase(query);
+            
+            // Возврат разницы покупателю, если цена матчинга лучше
+            if (tradePrice < currentPrice) {
+                double priceDiff = (currentPrice - tradePrice) * matchQty;
+                query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
+                result = sendToDatabase(query);
+                bal = json::parse(result)[0];
+                newQty = stod(bal["quantity"].get<string>()) + priceDiff;
+                query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
+                sendToDatabase(query);
+            }
         } else {
-            query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
-            result = sendToDatabase(query);
-            json bal = json::parse(result)[0];
-            double newQty = std::stod(bal["quantity"].get<std::string>()) + matchQty;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
-            sendToDatabase(query);
-            
-            query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
-            result = sendToDatabase(query);
-            bal = json::parse(result)[0];
-            newQty = std::stod(bal["quantity"].get<std::string>()) - matchQty;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + firstLotId + "'";
-            sendToDatabase(query);
-            
-            double cost = matchQty * tradePrice;
+            // Продавец (current) получает second
+            double actualCost = matchQty * tradePrice;
             query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
             result = sendToDatabase(query);
-            bal = json::parse(result)[0];
-            newQty = std::stod(bal["quantity"].get<std::string>()) + cost;
-            query = "UPDATE user_lot SET quantity = '" + std::to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
+            json bal = json::parse(result)[0];
+            double newQty = stod(bal["quantity"].get<string>()) + actualCost;
+            query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + currentUserId + "' AND lot_id = '" + secondLotId + "'";
             sendToDatabase(query);
+            
+            // Покупатель (opposite) получает first
+            query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
+            result = sendToDatabase(query);
+            bal = json::parse(result)[0];
+            newQty = stod(bal["quantity"].get<string>()) + matchQty;
+            query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + firstLotId + "'";
+            sendToDatabase(query);
+            
+            // Возврат разницы покупателю (opposite), если цена матчинга лучше
+            double oppositeOrderPrice = stod(oppositeOrder["price"].get<string>());
+            if (tradePrice < oppositeOrderPrice) {
+                double priceDiff = (oppositeOrderPrice - tradePrice) * matchQty;
+                query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
+                result = sendToDatabase(query);
+                bal = json::parse(result)[0];
+                newQty = stod(bal["quantity"].get<string>()) + priceDiff;
+                query = "UPDATE user_lot SET quantity = '" + to_string(newQty) + "' WHERE user_id = '" + oppositeUserId + "' AND lot_id = '" + secondLotId + "'";
+                sendToDatabase(query);
+            }
         }
         
         currentQty -= matchQty;
@@ -267,7 +290,7 @@ void Exchange::matchOrders(const std::string& pairId, const std::string& type) {
             query = "UPDATE order SET closed = '" + timestamp + "' WHERE order_id = '" + oppositeOrderId + "'";
             sendToDatabase(query);
         } else {
-            query = "UPDATE order SET quantity = '" + std::to_string(oppositeQty) + "' WHERE order_id = '" + oppositeOrderId + "'";
+            query = "UPDATE order SET quantity = '" + to_string(oppositeQty) + "' WHERE order_id = '" + oppositeOrderId + "'";
             sendToDatabase(query);
         }
         
@@ -275,66 +298,81 @@ void Exchange::matchOrders(const std::string& pairId, const std::string& type) {
             query = "UPDATE order SET closed = '" + timestamp + "' WHERE order_id = '" + currentOrderId + "'";
             sendToDatabase(query);
         } else {
-            query = "UPDATE order SET quantity = '" + std::to_string(currentQty) + "' WHERE order_id = '" + currentOrderId + "'";
+            query = "UPDATE order SET quantity = '" + to_string(currentQty) + "' WHERE order_id = '" + currentOrderId + "'";
             sendToDatabase(query);
         }
     }
 }
 
-json Exchange::createOrder(const json& request, const std::string& userKey) {
-    std::string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
-    std::string result = sendToDatabase(query);
+json Exchange::createOrder(const json& request, const string& userKey) {
+    string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
+    string result = sendToDatabase(query);
     json users = json::parse(result);
     if (users.empty()) return json{{"error", "Invalid key"}};
     
-    std::string userId = users[0]["user_id"];
-    std::string pairId = std::to_string(request["pair_id"].get<int>());
+    string userId = users[0]["user_id"];
+    string pairId = to_string(request["pair_id"].get<int>());
     double quantity = request["quantity"];
     double price = request["price"];
-    std::string type = request["type"];
+    string type = request["type"];
     
     query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = '" + pairId + "'";
     result = sendToDatabase(query);
     json pair = json::parse(result)[0];
     
-    std::string lotId = (type == "buy") ? pair["second_lot_id"].get<std::string>() : pair["first_lot_id"].get<std::string>();
-    double cost = (type == "buy") ? (quantity * price) : quantity;
+    // Для пары first/second (RUB/USD):
+    // buy: покупаем first (RUB), платим second (USD) - списываем quantity * price USD
+    // sell: продаем first (RUB), получаем second (USD) - списываем quantity RUB
+    string lotId;
+    double cost;
+    if (type == "buy") {
+        lotId = pair["second_lot_id"].get<string>();
+        cost = quantity * price;
+    } else {
+        lotId = pair["first_lot_id"].get<string>();
+        cost = quantity;
+    }
     
     query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
     result = sendToDatabase(query);
     json balance = json::parse(result)[0];
-    double currentBalance = std::stod(balance["quantity"].get<std::string>());
+    double currentBalance = stod(balance["quantity"].get<string>());
     
     if (currentBalance < cost) return json{{"error", "Insufficient balance"}};
     
-    query = "UPDATE user_lot SET quantity = '" + std::to_string(currentBalance - cost) + "' WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
+    query = "UPDATE user_lot SET quantity = '" + to_string(currentBalance - cost) + "' WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
     sendToDatabase(query);
     
-    query = "INSERT INTO order (user_id, pair_id, quantity, price, type, closed) VALUES ('" + 
-           userId + "', '" + pairId + "', '" + std::to_string(quantity) + "', '" + 
-           std::to_string(price) + "', '" + type + "', '')";
+    // Получаем следующий order_id
+    query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE order_id = '1' OR order_id = '2' OR order_id = '3' OR order_id = '4' OR order_id = '5' OR order_id = '6' OR order_id = '7' OR order_id = '8' OR order_id = '9' OR order_id = '10' OR order_id = '11' OR order_id = '12' OR order_id = '13' OR order_id = '14' OR order_id = '15' OR order_id = '16' OR order_id = '17' OR order_id = '18' OR order_id = '19' OR order_id = '20'";
     result = sendToDatabase(query);
-    json orderResult = json::parse(result);
+    json orders = json::parse(result);
+    int nextOrderId = orders.size() + 1;
+    
+    query = "INSERT INTO order VALUES ('" + to_string(nextOrderId) + "', '" +
+           userId + "', '" + pairId + "', '" + to_string(quantity) + "', '" + 
+           to_string(price) + "', '" + type + "', '')";
+    sendToDatabase(query);
     
     matchOrders(pairId, type);
     
-    return json{{"order_id", std::stoi(orderResult["order_id"].get<std::string>())}};
+    return json{{"order_id", nextOrderId}};
 }
 
 json Exchange::getOrders() {
-    std::string query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE order_id = order_id";
-    std::string result = sendToDatabase(query);
+    string query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE order_id = '1' OR order_id = '2' OR order_id = '3' OR order_id = '4' OR order_id = '5' OR order_id = '6' OR order_id = '7' OR order_id = '8' OR order_id = '9' OR order_id = '10' OR order_id = '11' OR order_id = '12' OR order_id = '13' OR order_id = '14' OR order_id = '15' OR order_id = '16' OR order_id = '17' OR order_id = '18' OR order_id = '19' OR order_id = '20'";
+    string result = sendToDatabase(query);
     return json::parse(result);
 }
 
-json Exchange::deleteOrder(const json& request, const std::string& userKey) {
-    std::string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
-    std::string result = sendToDatabase(query);
+json Exchange::deleteOrder(const json& request, const string& userKey) {
+    string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
+    string result = sendToDatabase(query);
     json users = json::parse(result);
     if (users.empty()) return json{{"error", "Invalid key"}};
     
-    std::string userId = users[0]["user_id"];
-    std::string orderId = std::to_string(request["order_id"].get<int>());
+    string userId = users[0]["user_id"];
+    string orderId = to_string(request["order_id"].get<int>());
     
     query = "SELECT order_id, user_id, pair_id, quantity, price, type, closed FROM order WHERE order_id = '" + orderId + "'";
     result = sendToDatabase(query);
@@ -342,22 +380,30 @@ json Exchange::deleteOrder(const json& request, const std::string& userKey) {
     if (orders.empty() || orders[0]["user_id"] != userId) return json{{"error", "Order not found"}};
     
     json order = orders[0];
-    query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = '" + order["pair_id"].get<std::string>() + "'";
+    query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = '" + order["pair_id"].get<string>() + "'";
     result = sendToDatabase(query);
     json pair = json::parse(result)[0];
     
-    std::string type = order["type"];
-    std::string lotId = (type == "buy") ? pair["second_lot_id"].get<std::string>() : pair["first_lot_id"].get<std::string>();
-    double quantity = std::stod(order["quantity"].get<std::string>());
-    double price = std::stod(order["price"].get<std::string>());
-    double refund = (type == "buy") ? (quantity * price) : quantity;
+    string type = order["type"];
+    double quantity = stod(order["quantity"].get<string>());
+    double price = stod(order["price"].get<string>());
+    
+    string lotId;
+    double refund;
+    if (type == "buy") {
+        lotId = pair["second_lot_id"].get<string>();
+        refund = quantity * price;
+    } else {
+        lotId = pair["first_lot_id"].get<string>();
+        refund = quantity;
+    }
     
     query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
     result = sendToDatabase(query);
     json balance = json::parse(result)[0];
-    double currentBalance = std::stod(balance["quantity"].get<std::string>());
+    double currentBalance = stod(balance["quantity"].get<string>());
     
-    query = "UPDATE user_lot SET quantity = '" + std::to_string(currentBalance + refund) + "' WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
+    query = "UPDATE user_lot SET quantity = '" + to_string(currentBalance + refund) + "' WHERE user_id = '" + userId + "' AND lot_id = '" + lotId + "'";
     sendToDatabase(query);
     
     query = "DELETE FROM order WHERE order_id = '" + orderId + "'";
@@ -367,41 +413,41 @@ json Exchange::deleteOrder(const json& request, const std::string& userKey) {
 }
 
 json Exchange::getLots() {
-    std::string query = "SELECT lot_id, name FROM lot WHERE lot_id = lot_id";
-    std::string result = sendToDatabase(query);
+    string query = "SELECT lot_id, name FROM lot WHERE lot_id = '1' OR lot_id = '2' OR lot_id = '3' OR lot_id = '4' OR lot_id = '5' OR lot_id = '6' OR lot_id = '7' OR lot_id = '8' OR lot_id = '9' OR lot_id = '10'";
+    string result = sendToDatabase(query);
     return json::parse(result);
 }
 
 json Exchange::getPairs() {
-    std::string query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = pair_id";
-    std::string result = sendToDatabase(query);
+    string query = "SELECT pair_id, first_lot_id, second_lot_id FROM pair WHERE pair_id = '1' OR pair_id = '2' OR pair_id = '3' OR pair_id = '4' OR pair_id = '5' OR pair_id = '6' OR pair_id = '7' OR pair_id = '8' OR pair_id = '9' OR pair_id = '10' OR pair_id = '11' OR pair_id = '12' OR pair_id = '13' OR pair_id = '14' OR pair_id = '15' OR pair_id = '16' OR pair_id = '17' OR pair_id = '18' OR pair_id = '19' OR pair_id = '20'";
+    string result = sendToDatabase(query);
     json pairs = json::parse(result);
     json response = json::array();
     for (auto& pair : pairs) {
         response.push_back({
-            {"pair_id", std::stoi(pair["pair_id"].get<std::string>())},
-            {"sale_lot_id", std::stoi(pair["first_lot_id"].get<std::string>())},
-            {"buy_lot_id", std::stoi(pair["second_lot_id"].get<std::string>())}
+            {"pair_id", stoi(pair["pair_id"].get<string>())},
+            {"sale_lot_id", stoi(pair["first_lot_id"].get<string>())},
+            {"buy_lot_id", stoi(pair["second_lot_id"].get<string>())}
         });
     }
     return response;
 }
 
-json Exchange::getBalance(const std::string& userKey) {
-    std::string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
-    std::string result = sendToDatabase(query);
+json Exchange::getBalance(const string& userKey) {
+    string query = "SELECT user_id, username, key FROM user WHERE key = '" + userKey + "'";
+    string result = sendToDatabase(query);
     json users = json::parse(result);
     if (users.empty()) return json{{"error", "Invalid key"}};
     
-    std::string userId = users[0]["user_id"];
+    string userId = users[0]["user_id"];
     query = "SELECT user_id, lot_id, quantity FROM user_lot WHERE user_id = '" + userId + "'";
     result = sendToDatabase(query);
     json balances = json::parse(result);
     json response = json::array();
     for (auto& balance : balances) {
         response.push_back({
-            {"lot_id", std::stoi(balance["lot_id"].get<std::string>())},
-            {"quantity", std::stod(balance["quantity"].get<std::string>())}
+            {"lot_id", stoi(balance["lot_id"].get<string>())},
+            {"quantity", stod(balance["quantity"].get<string>())}
         });
     }
     return response;

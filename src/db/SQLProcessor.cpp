@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <vector>
 #include "../include/dbase/SQLProcessor.h"
 #include "../include/Utils.h"
 
@@ -54,7 +55,13 @@ bool SQLProcessor::checkConditions(Condition* conditions, int condCount,
             //если колонка второй таблицы - row2
             else if (leftParts.GetAt(0) == table2Name) leftVal = getColumnValue(row2, table2Name, leftParts.GetAt(1));
         } else {
-             leftVal = cond.leftOperand; // Если вдруг слева константа
+            // Если нет точки, пробуем найти колонку в table1Name
+            leftVal = getColumnValue(row1, table1Name, cond.leftOperand);
+            if (leftVal.empty() && !table2Name.empty()) {
+                leftVal = getColumnValue(row2, table2Name, cond.leftOperand);
+            }
+            // Если не нашли колонку, значит это константа
+            if (leftVal.empty()) leftVal = cond.leftOperand;
         }
 
         //вычисляется истинность текущего условия (с = d)
@@ -92,6 +99,7 @@ void SQLProcessor::execute(const string& query) {
     if (q.find("INSERT") == 0) processInsert(q);
     else if (q.find("SELECT") == 0) processSelect(q);
     else if (q.find("DELETE") == 0) processDelete(q);
+    else if (q.find("UPDATE") == 0) processUpdate(q);
     else cout << "Unknown command" << endl;
 }
 
@@ -291,4 +299,133 @@ void SQLProcessor::processSelect(const string& query) {
         }
     }
     delete[] conditions;
+}
+
+void SQLProcessor::processUpdate(const string& query) {
+    // UPDATE table SET col = 'val' WHERE conditions
+    size_t setPos = query.find("SET");
+    size_t wherePos = query.find("WHERE");
+    
+    if (setPos == string::npos || wherePos == string::npos) {
+        cout << "Syntax error" << endl;
+        return;
+    }
+    
+    string tableName = trim(query.substr(6, setPos - 6)); // после UPDATE до SET
+    string setPart = trim(query.substr(setPos + 3, wherePos - (setPos + 3)));
+    
+    // Парсим SET col = 'val'
+    size_t eqPos = setPart.find('=');
+    if (eqPos == string::npos) {
+        cout << "Syntax error" << endl;
+        return;
+    }
+    string colName = trim(setPart.substr(0, eqPos));
+    string newValue = trim(setPart.substr(eqPos + 1));
+    
+    // Парсим WHERE условия
+    int condCapacity = 20;
+    Condition* conditions = new Condition[condCapacity];
+    int condCount = 0;
+    
+    string remaining = query.substr(wherePos + 5);
+    string nextLogicalConn = "AND";
+    while (!remaining.empty() && condCount < condCapacity) {
+        size_t pAnd = remaining.find(" AND ");
+        size_t pOr = remaining.find(" OR ");
+        size_t pNextOp = string::npos;
+        string opFound = "";
+        
+        if (pAnd != string::npos && (pOr == string::npos || pAnd < pOr)) {
+            pNextOp = pAnd;
+            opFound = "AND";
+        } else if (pOr != string::npos) {
+            pNextOp = pOr;
+            opFound = "OR";
+        }
+        
+        string conditionStr;
+        if (pNextOp != string::npos) {
+            conditionStr = trim(remaining.substr(0, pNextOp));
+            remaining = remaining.substr(pNextOp + opFound.length() + 2);
+        } else {
+            conditionStr = trim(remaining);
+            remaining = "";
+        }
+        
+        size_t eqPos2 = conditionStr.find('=');
+        if (eqPos2 != string::npos) {
+            Condition c;
+            c.leftOperand = trim(conditionStr.substr(0, eqPos2));
+            c.rightOperand = trim(conditionStr.substr(eqPos2 + 1));
+            c.oper = "=";
+            c.logicalConn = nextLogicalConn;
+            conditions[condCount++] = c;
+        }
+        
+        if (!opFound.empty()) {
+            nextLogicalConn = opFound;
+        }
+    }
+    
+    // Обновляем строки
+    Collection table(schema, tableName);
+    TableMetadata* meta = schema->getTable(tableName);
+    if (!meta) {
+        delete[] conditions;
+        return;
+    }
+    
+    int colIndex = -1;
+    for (int i = 0; i < meta->columnNames.Length(); i++) {
+        if (meta->columnNames.GetAt(i) == colName) {
+            colIndex = i;
+            break;
+        }
+    }
+    
+    if (colIndex == -1) {
+        delete[] conditions;
+        return;
+    }
+    
+    int idx = 1;
+    while (true) {
+        string file = table.getCsvPath(idx);
+        ifstream fin(file);
+        if (!fin.is_open()) break;
+        
+        vector<string> lines;
+        string line;
+        while (getline(fin, line)) {
+            if (checkConditions(conditions, condCount, line, tableName, "", "")) {
+                Massive values = split(line, ',');
+                if (colIndex < values.Length()) {
+                    values.SetAt(colIndex, newValue);
+                    string newLine = "";
+                    for (int i = 0; i < values.Length(); i++) {
+                        if (i > 0) newLine += ",";
+                        newLine += values.GetAt(i);
+                    }
+                    lines.push_back(newLine);
+                } else {
+                    lines.push_back(line);
+                }
+            } else {
+                lines.push_back(line);
+            }
+        }
+        fin.close();
+        
+        ofstream fout(file);
+        for (const auto& l : lines) {
+            fout << l << "\n";
+        }
+        fout.close();
+        
+        idx++;
+    }
+    
+    delete[] conditions;
+    cout << "Updated " << tableName << endl;
 }
