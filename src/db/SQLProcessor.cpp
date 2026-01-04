@@ -72,6 +72,10 @@ bool SQLProcessor::checkConditions(Condition* conditions, int condCount,
             else if (rightParts.GetAt(0) == table2Name) rightVal = getColumnValue(row2, table2Name, rightParts.GetAt(1));
         } else {
             rightVal = cond.rightOperand;
+            // Убираем кавычки из строковых литералов
+            if (rightVal.length() >= 2 && rightVal.front() == '\'' && rightVal.back() == '\'') {
+                rightVal = rightVal.substr(1, rightVal.length() - 2);
+            }
         }
 
         bool currentCheck = (leftVal == rightVal);
