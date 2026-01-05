@@ -1,0 +1,61 @@
+
+Создание двух пользователей:
+   curl -X POST -H "Content-Type: application/json" -d '{"username":"user1"}' http://127.0.0.1:8080/user
+
+   curl -X POST -H "Content-Type: application/json" -d '{"username":"user2"}' http://127.0.0.1:8080/user
+
+Проверка начальных балансов (должно быть по 1000 каждой валюты):
+   curl -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" http://127.0.0.1:8080/balance
+   curl -H "X-USER-KEY: 9e60b3376f70709cfe01c8f3b22870c8" http://127.0.0.1:8080/balance
+
+User1 создает ордер на покупку 300 RUB за USDT по цене 0.015:
+   curl -X POST -H "Content-Type: application/json" -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" -d '{"pair_id":2,"quantity":300,"price":0.015,"type":"buy"}' http://127.0.0.1:8080/order
+
+Проверка баланса user1 (должно списаться 300*0.015=4.5 USDT):
+   curl -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" http://127.0.0.1:8080/balance
+   # Ожидается: RUB=1000, USDT=995.5
+
+Просмотр активных ордеров:
+   curl http://127.0.0.1:8080/order
+   # Должен быть 1 ордер: order_id=1, quantity=300, price=0.015, type=buy
+
+User2 создает ордер на продажу 200 RUB за USDT по цене 0.01:
+   curl -X POST -H "Content-Type: application/json" -H "X-USER-KEY: 9e60b3376f70709cfe01c8f3b22870c8" -d '{"pair_id":2,"quantity":200,"price":0.01,"type":"sell"}' http://127.0.0.1:8080/order
+
+Проверка балансов после матчинга:
+   curl -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" http://127.0.0.1:8080/balance
+   # Ожидается: RUB=1200 (+200), USDT=997 (списано 4.5, вернулось 1, потрачено 2)
+
+   curl -H "X-USER-KEY: 9e60b3376f70709cfe01c8f3b22870c8" http://127.0.0.1:8080/balance
+   # Ожидается: RUB=800 (-200), USDT=1002 (+2)
+
+Просмотр ордеров (должен остаться частично исполненный ордер user1):
+   curl http://127.0.0.1:8080/order
+   # Ожидается: order_id=1, quantity=100, price=0.015, type=buy, closed=''
+   # order_id=2 должен быть закрыт (closed=timestamp)
+
+Проверка пар и лотов:
+    curl http://127.0.0.1:8080/pair
+    curl http://127.0.0.1:8080/lot
+
+Удаление оставшегося ордера user1:
+    curl -X DELETE -H "Content-Type: application/json" -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" -d '{"order_id":1}' http://127.0.0.1:8080/order
+
+Проверка баланса user1 (должны вернуться 100*0.015=1.5 USDT):
+    curl -H "X-USER-KEY: 83fc3df14bed98be53f7948d9849410b" http://127.0.0.1:8080/balance
+    # Ожидается: RUB=1200, USDT=998.5 (997 + 1.5)
+
+ИТОГОВЫЕ БАЛАНСЫ:
+==================
+User1: 1200 RUB, 998 USDT (купил 200 RUB за 2 USDT)
+User2: 800 RUB, 1002 USDT (продал 200 RUB за 2 USDT)
+
+ДОПОЛНИТЕЛЬНЫЕ ЭНДПОИНТЫ:
+==========================
+GET  /lot      - список всех лотов (валют)
+GET  /pair     - список всех торговых пар
+GET  /order    - список всех ордеров
+GET  /balance  - баланс пользователя (требует X-USER-KEY)
+POST /user     - создание нового пользователя
+POST /order    - создание нового ордера (требует X-USER-KEY)
+DELETE /order  - удаление ордера (требует X-USER-KEY)
